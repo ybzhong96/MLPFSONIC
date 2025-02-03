@@ -23,7 +23,7 @@ from RecoParticleFlow.PFProducer.chargedHadronPFTrackIsolation_cfi import *
 
 from RecoJets.JetProducers.fixedGridRhoProducerFastjet_cfi import *
 fixedGridRhoFastjetAllTmp = fixedGridRhoFastjetAll.clone(pfCandidatesTag = "particleFlowTmp")
-
+print("check-point cff-26")
 particleFlowTmpTask = cms.Task(particleFlowTmp)
 particleFlowTmpSeq = cms.Sequence(particleFlowTmpTask)
 
@@ -104,10 +104,27 @@ for e in [pp_on_XeXe_2017, pp_on_AA]:
 from Configuration.ProcessModifiers.mlpf_cff import mlpf
 from RecoParticleFlow.PFProducer.mlpfProducer_cfi import mlpfProducer
 mlpf.toReplaceWith(particleFlowTmp, mlpfProducer)
-
-#
+print("check-point cff-107")
+#For MLPF_SONIC
+from Configuration.ProcessModifiers.MLPFSonicTriton_cff import MLPFSonicTriton
+from RecoParticleFlow.PFProducer.mlpfsonicProducer_cfi import mlpfsonicProducer
+MLPFSonicTriton.toReplaceWith(particleFlowTmp, mlpfsonicProducer.clone(
+    Client = cms.PSet(
+        timeout = cms.untracked.uint32(300),
+        mode = cms.string("Async"),
+        modelName = cms.string("MLPF"),
+        modelConfigPath = cms.FileInPath("RecoParticleFlow/PFProducer/data/mlpf/config.pbtxt"),
+        modelVersion = cms.string(""),
+        verbose = cms.untracked.bool(False),
+        allowedTries = cms.untracked.uint32(0),
+        useSharedMemory = cms.untracked.bool(True),
+        compression = cms.untracked.string(""),
+    )
+))
+print("check-point cff-124")
 # switch from pfTICL to simPF
 def _findIndicesByModule(process,name):
+    print("check-point cff-127")
     ret = []
     if hasattr(process,'particleFlowBlock'):
         for i, pset in enumerate(process.particleFlowBlock.elementImporters):

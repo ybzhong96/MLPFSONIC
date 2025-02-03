@@ -9,6 +9,7 @@
 
 #include "DataFormats/ParticleFlowReco/interface/PFBlockElementTrack.h"
 
+
 using namespace cms::Ort;
 
 //use this to switch on detailed print statements in MLPF
@@ -60,8 +61,10 @@ void MLPFProducer::produce(edm::Event& event, const edm::EventSetup& setup) {
 #endif
 
   //Fill the input tensor (batch, elems, features) = (1, tensor_size, NUM_ELEMENT_FEATURES)
+  //std::vector<TritonInputContainer<std::vector<float>>> inputs;
   std::vector<std::vector<float>> inputs;
   inputs.push_back(std::vector<float>(NUM_ELEMENT_FEATURES * tensor_size, 0.0));
+  //inputs.push_back(TritonInputContainer<std::vector<float>>(NUM_ELEMENT_FEATURES * tensor_size, 0.0));
   inputs.push_back(std::vector<float>(tensor_size, 0.0));
   unsigned int ielem = 0;
   for (const auto* pelem : selected_elements) {
