@@ -32,6 +32,8 @@ private:
   const edm::EDPutTokenT<reco::PFCandidateCollection> pfCandidatesPutToken_;
   const edm::EDGetTokenT<edm::View<reco::GsfElectron>> gsfElectrons_;
   const edm::EDGetTokenT<reco::PFBlockCollection> inputTagBlocks_;
+  std::vector<std::string> input_names_;
+  std::vector<std::string> output_names_;
 };
 
 class SelectedElementsManager {
@@ -40,6 +42,8 @@ public:
         static SelectedElementsManager instance; // Single instance for the program
         return instance;
     }
+
+
 
     void fill(const std::vector<const reco::PFBlockElement*>& all_elements) {
         selected_elements_.clear();
@@ -74,27 +78,10 @@ MLPFSONICProducer::MLPFSONICProducer(const edm::ParameterSet &iConfig)
     : TritonEDProducer<>(iConfig),
       pfCandidatesPutToken_{produces<reco::PFCandidateCollection>()},
       gsfElectrons_{consumes<edm::View<reco::GsfElectron>>(edm::InputTag("gedGsfElectronsTmp"))},
-      inputTagBlocks_{consumes<reco::PFBlockCollection>(iConfig.getParameter<edm::InputTag>("src"))} {}
-
-
-// // Define the function
-// std::vector<const reco::PFBlockElement*> filterSelectedElements(
-//     const std::vector<const reco::PFBlockElement*>& all_elements) {
-    
-//     std::vector<const reco::PFBlockElement*> selected_elements;
-
-//     for (const auto* pelem : all_elements) {
-//         // Skip elements with type PS1, PS2, or BREM
-//         if (pelem->type() == reco::PFBlockElement::PS1 || 
-//             pelem->type() == reco::PFBlockElement::PS2 || 
-//             pelem->type() == reco::PFBlockElement::BREM) {
-//             continue;
-//         }
-//         selected_elements.push_back(pelem);
-//     }
-
-//     return selected_elements;
-// }
+      inputTagBlocks_{consumes<reco::PFBlockCollection>(iConfig.getParameter<edm::InputTag>("src"))},
+      input_names_(iConfig.getParameter<std::vector<std::string>>("input_names")),
+      output_names_(iConfig.getParameter<std::vector<std::string>>("output_names"))
+      {}
 
 MLPFSONICProducer::~MLPFSONICProducer() {}
 void MLPFSONICProducer::acquire(edm::Event const &iEvent, edm::EventSetup const &iSetup, Input &iInput){
@@ -115,31 +102,21 @@ void MLPFSONICProducer::acquire(edm::Event const &iEvent, edm::EventSetup const 
 
   const auto tensor_size = num_elements_total;
 
-// #ifdef MLPF_DEBUG
-//   assert(num_elements_total < NUM_MAX_ELEMENTS_BATCH);
-//   //tensor size must be a multiple of the bin size and larger than the number of elements
-//   assert(tensor_size <= NUM_MAX_ELEMENTS_BATCH);
-//   assert(tensor_size % LSH_BIN_SIZE == 0);
-// #endif
-
-#ifdef MLPF_DEBUG
-  std::cout << "tensor_size=" << tensor_size << std::endl;
-#endif
-
   //Fill the input tensor (batch, elems, features) = (1, tensor_size, NUM_ELEMENT_FEATURES)
   std::vector<std::vector<float>> inputs;
-  //std::vector<TritonInputContainer<std::vector<float>>> inputs;
-  //inputs.push_back(TritonInputContainer<std::vector<float>>(NUM_ELEMENT_FEATURES * tensor_size, 0.0));
-  //inputs.push_back(TritonInputContainer<std::vector<float>>(tensor_size, 0.0));
-    
-  inputs.push_back(std::vector<float>(NUM_ELEMENT_FEATURES * tensor_size, 0.0));
+  inputs.push_back(std::vector<float>(tensor_size*NUM_ELEMENT_FEATURES, 0.0));
   inputs.push_back(std::vector<float>(tensor_size, 0.0));  // mask
+
   unsigned int ielem = 0;
-  const char* mask = "mask";
-  const char* Xfeat = "Xfeat_normed";
+  const auto &mask_name = input_names_[0];
+  const auto &X_name = input_names_[1];
     
-  auto &data1 = iInput.at(mask);
-  auto &data2 = iInput.at(Xfeat);
+  auto &data1 = iInput.at(mask_name);
+  auto &data2 = iInput.at(X_name);  
+  data1.setShape(0, tensor_size);
+  data2.setShape(0, tensor_size);
+  auto tdata1 = data1.allocate<float>(true);
+  auto tdata2 = data2.allocate<float>(true);
   for (const auto* pelem : selected_elements) {
     if (ielem > tensor_size) {
       continue;
@@ -152,85 +129,70 @@ void MLPFSONICProducer::acquire(edm::Event const &iEvent, edm::EventSetup const 
 
     //copy features to the input array
     for (unsigned int iprop = 0; iprop < NUM_ELEMENT_FEATURES; iprop++) {
-      inputs[0][ielem * NUM_ELEMENT_FEATURES + iprop] = normalize(props[iprop]);
-     }
+      inputs[0][ielem*NUM_ELEMENT_FEATURES+ iprop]=normalize(props[iprop]);
+    }
     inputs[1][ielem] = 1.0;
     ielem += 1;
-    }
-    auto wrapped_input1 = std::vector<std::vector<float>>{inputs[1]};
-    auto input_ptr1 = std::make_shared<TritonInput<float>>(wrapped_input1);
-    auto wrapped_input0 = std::vector<std::vector<float>>{inputs[0]};
-    auto input_ptr0 = std::make_shared<TritonInput<float>>(wrapped_input0);
-    TritonInputContainer<float> input_container1 = input_ptr1;
-    TritonInputContainer<float> input_container0 = input_ptr0;
-    data1.toServer(input_container1);
-    data2.toServer(input_container0);
-//     for (const auto& input : inputs) {
-//         auto input_ptr = std::make_shared<TritonInput<float>>(input);
-//         TritonInputContainer<float> input_container = input_ptr;
-//         data1.toServer(input_container);
-// }
-
+  }
+  auto &vdata1 = (*tdata1)[0]; 
+  auto &vdata2 = (*tdata2)[0];
+  vdata1 = inputs[1];
+  vdata2 = inputs[0];
+  data1.toServer(tdata1); 
+  data2.toServer(tdata2);
+  std::cout << "check-point Producer-143_tensorsize_"<< tensor_size << std::endl;
+  // for (unsigned int i = 0; i < tensor_size; i++) {
+  //   std::cout << "check-point Producer-151_mask_ "<< (*tdata1)[0][i] << std::endl;
+  //   std::cout << "check-point Producer-152_elem_"<< (*tdata2)[0][i] << std::endl; 
+  // } Non-empty
 }
-
 void MLPFSONICProducer::produce(edm::Event &iEvent,
                                 const edm::EventSetup &iSetup,
                                 Output const &iOutput){
     using namespace reco::mlpf;
-    const auto& output1 = iOutput.at("bid");
-    const auto& output2 = iOutput.at("id");
-    const auto& output3 = iOutput.at("momentum");
-    const auto & output_binary = output1.fromServer<float>();
-    const auto & output_pid = output2.fromServer<float>();
-    const auto & output_p4 = output3.fromServer<float>();
-    const auto& selected_elements = SelectedElementsManager::getInstance().get();
+    const auto &bid_name = output_names_[0];
+    const auto &id_name = output_names_[1];
+    const auto &momentum_name = output_names_[2];
+    const auto &output1 = iOutput.at(bid_name);
+    const auto &output2 = iOutput.at(id_name);
+    const auto &output3 = iOutput.at(momentum_name); 
+    const auto &output_binary = output1.fromServer<float>();
+    const auto &output_pid = output2.fromServer<float>();
+    const auto &output_p4 = output3.fromServer<float>();
+    // const auto &output_from_server = output0.fromServer<float>();
+   // std::cout << "check-point Producer-163_(should be x2)"<< output_binary[0].size()<<std::endl;
+   // std::cout << "check-point Producer-164_(should be x9)"<< output_pid[0].size()<<std::endl;
+   // std::cout << "check-point Producer-165_(should x5)"<< output_p4[0].size()<<std::endl;
+    std::cout << "check-point Producer-166_(should be x2)"<< output_binary[0][0] << "______"<< output_binary[0][1] <<"____"<< output_binary[0][2]<< "____"<< output_binary[0][3]<<std::endl;
+    const auto &selected_elements = SelectedElementsManager::getInstance().get();
     // Total Number of selected_elements 
     unsigned int num_elements_total = selected_elements.size();
     unsigned int tensor_size = num_elements_total;
-  #ifdef MLPF_DEBUG
-    std::cout << "output_binary=" << output_binary.size() << std::endl;  
-    assert(output_binary.size() == tensor_size * 2);
-
-    std::cout << "output_pid=" << output_pid.size() << std::endl;  
-    assert(output_pid.size() == tensor_size * NUM_OUTPUT_FEATURES_CLS);
-
-    std::cout << "output_p4=" << output_p4.size() << std::endl;  
-    assert(output_p4.size() == tensor_size * NUM_OUTPUT_FEATURES_P4);
-  #endif
-
-
+    //std::cout << "check-point Producer-171_"<<tensor_size<<std::endl; 
     
     std::vector<reco::PFCandidate> pOutputCandidateCollection;
     for (size_t ielem = 0; ielem < num_elements_total; ielem++) {
       std::vector<float> pred_id_probas(pdgid_encoding.size(), 0.0);
       const reco::PFBlockElement* elem = selected_elements[ielem];
-
-      const auto logit_no_ptcl = output_binary[ielem * 2 + 0].begin();
-      const auto logit_ptcl = output_binary[ielem * 2 + 1].begin();
+      const auto logit_no_ptcl = output_binary[0][ielem * 2 + 0]; //.begin();
+      const auto logit_ptcl = output_binary[0][ielem * 2 + 1]; //.begin();
+     
       // Check if the binary classifier of the model predicted a particle 
       int pred_pid = 0;
       if (logit_ptcl > logit_no_ptcl) {
         for (unsigned int idx_id = 0; idx_id < pred_id_probas.size(); idx_id++) {
-            auto pred_proba = output_pid[ielem * NUM_OUTPUT_FEATURES_CLS + idx_id].begin();
-  #ifdef MLPF_DEBUG
-        std::cout << "pid proba: " << pred_proba << std::endl;
-        assert(!std::isnan(pred_proba));
-  #endif
-            pred_id_probas[idx_id] = *pred_proba;
+            auto pred_proba = output_pid[0][ielem * NUM_OUTPUT_FEATURES_CLS + idx_id]; //.begin();
+            pred_id_probas[idx_id] = pred_proba; //*pred_proba;
         }
   
         auto imax = argMax(pred_id_probas);
-  
         //get the most probable class PDGID
         pred_pid = pdgid_encoding.at(imax);
       }
-    
-
-
-
       //a particle was predicted for this PFElement, otherwise it was a spectator
-      if (pred_pid != 0) {
-        //muons and charged hadrons should only come from tracks, otherwise we won't have track references to pass downstream
+     // if (pred_pid != 0) {
+      if(false){   
+     //muons and charged hadrons should only come from tracks, otherwise we won't have track references to pass downstream
         if (((pred_pid == 13) || (pred_pid == 211)) && elem->type() != reco::PFBlockElement::TRACK) {
           pred_pid = 130;
         }
@@ -258,36 +220,32 @@ void MLPFSONICProducer::produce(edm::Event &iEvent,
               pred_pid = 130;
           }
         }
-
+      // std::cout << "check-point Producer-224" << std::endl;
       //get the predicted momentum components from the model
-        float pred_pt = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_PT].begin();
-       // pred_pt = exp(pred_pt) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 1]; 
-        float pred_eta = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_ETA].begin();
-        float pred_sin_phi = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_SIN_PHI].begin();
-        float pred_cos_phi = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_COS_PHI].begin();
-        float pred_e = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_ENERGY].begin();
-      //  pred_e = exp(pred_e) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 5];
+       float pred_pt = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_PT].begin();
+       //pred_pt = exp(pred_pt) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 1]; 
+       float pred_eta = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_ETA].begin();
+       float pred_sin_phi = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_SIN_PHI].begin();
+       float pred_cos_phi = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_COS_PHI].begin();
+       float pred_e = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_ENERGY].begin();
+       //pred_e = exp(pred_e) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 5];
       
-        auto cand = makeCandidate(pred_pid, pred_charge, pred_pt, pred_eta, pred_sin_phi, pred_cos_phi, pred_e);
-        setCandidateRefs(cand, selected_elements, ielem);
-        pOutputCandidateCollection.push_back(cand);
-      }
-    }//end loop of elements
-
+       auto cand = makeCandidate(pred_pid, pred_charge, pred_pt, pred_eta, pred_sin_phi, pred_cos_phi, pred_e);
+       setCandidateRefs(cand, selected_elements, ielem);
+       pOutputCandidateCollection.push_back(cand);
+     }
+   }  //end loop of elements
+    std::cout << "check-point Producer-239" << std::endl;
     iEvent.emplace(pfCandidatesPutToken_, pOutputCandidateCollection);
 }
     
 
-// std::unique_ptr<ONNXRuntime> MLPFSONICProducer::initializeGlobalCache(const edm::ParameterSet& params) {
-//   return std::make_unique<ONNXRuntime>(params.getParameter<edm::FileInPath>("model_path").fullPath());
-// }
-
 void MLPFSONICProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
   edm::ParameterSetDescription desc;
+  TritonClient::fillPSetDescription(desc);
   desc.add<edm::InputTag>("src", edm::InputTag("particleFlowBlock"));
-  // desc.add<edm::FileInPath>("model_path",
-  //                           edm::FileInPath("RecoParticleFlow/PFProducer/data/mlpf/"
-  //                                           "dev.onnx"));
+  desc.add<std::vector<std::string>>("input_names", {"mask", "Xfeat_normed"});
+  desc.add<std::vector<std::string>>("output_names", {"bid", "id", "momentum"});
   descriptions.addWithDefaultLabel(desc);
 }
 

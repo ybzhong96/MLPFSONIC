@@ -91,7 +91,11 @@ void MLPFProducer::produce(edm::Event& event, const edm::EventSetup& setup) {
   const auto& output_binary = outputs[0];
   const auto& output_pid = outputs[1];
   const auto& output_p4 = outputs[2];
-
+  std::cout << "check-point 94_"<< tensor_size << std::endl;
+  std::cout << "check-point 95_"<< output_binary[0] <<"_____________________________________" << output_binary[1]<< std::endl;
+ // std::cout << "check-point 96_"<< output_pid[0] <<"_____________________________________" << output_pid[1]<< std::endl;
+ // std::cout << "check-point 97_"<< output_p4[0] <<"_____________________________________" << output_p4[1]<< std::endl;
+    
 #ifdef MLPF_DEBUG
   std::cout << "output_binary=" << output_binary.size() << std::endl;  
   assert(output_binary.size() == tensor_size * 2);
