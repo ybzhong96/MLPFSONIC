@@ -139,7 +139,6 @@ void MLPFSONICProducer::acquire(edm::Event const &iEvent, edm::EventSetup const 
   vdata2 = inputs[0];
   data1.toServer(tdata1); 
   data2.toServer(tdata2);
-  std::cout << "check-point Producer-143_tensorsize_"<< tensor_size << std::endl;
 }
 void MLPFSONICProducer::produce(edm::Event &iEvent,
                                 const edm::EventSetup &iSetup,
@@ -180,8 +179,7 @@ void MLPFSONICProducer::produce(edm::Event &iEvent,
       }
       //a particle was predicted for this PFElement, otherwise it was a spectator
       if (pred_pid !=0){   
-     //muons and charged hadrons should only come from tracks, otherwise we won't have track references to pass downstream
-        std::cout << "check-point Producer-186" << std::endl;       
+     //muons and charged hadrons should only come from tracks, otherwise we won't have track references to pass downstream  
         if (((pred_pid == 13) || (pred_pid == 211)) && elem->type() != reco::PFBlockElement::TRACK) {
           pred_pid = 130;
         }
@@ -209,7 +207,6 @@ void MLPFSONICProducer::produce(edm::Event &iEvent,
               pred_pid = 130;
           }
        }
-       std::cout << "check-point Producer-224" << std::endl;
       //get the predicted momentum components from the model
        float pred_pt = output_p4[0][ielem * NUM_OUTPUT_FEATURES_P4 + IDX_PT];
        pred_pt = exp(pred_pt) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 1]; 
