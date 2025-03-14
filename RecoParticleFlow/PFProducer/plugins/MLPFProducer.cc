@@ -47,15 +47,18 @@ void MLPFProducer::produce(edm::Event& event, const edm::EventSetup& setup) {
 
   std::vector<const reco::PFBlockElement*> selected_elements;
   unsigned int num_elements_total = 0;
+  unsigned int num_elements_skipped = 0;
   for (const auto* pelem : all_elements) {
     if (pelem->type() == reco::PFBlockElement::PS1 || pelem->type() == reco::PFBlockElement::PS2 || pelem->type() == reco::PFBlockElement::BREM) {
+      num_elements_skipped += 1;
       continue;
     }
     num_elements_total += 1;
     selected_elements.push_back(pelem);
   }
   const auto tensor_size = num_elements_total;
-
+  std:: cout << "number_of_skipped_elements = " << num_elements_skipped;
+  std:: cout << "number_of_total_elements = " << num_elements_total;
 #ifdef MLPF_DEBUG
   std::cout << "tensor_size=" << tensor_size << std::endl;
 #endif
@@ -91,8 +94,8 @@ void MLPFProducer::produce(edm::Event& event, const edm::EventSetup& setup) {
   const auto& output_binary = outputs[0];
   const auto& output_pid = outputs[1];
   const auto& output_p4 = outputs[2];
-  std::cout << "check-point 94_"<< tensor_size << std::endl;
-  std::cout << "check-point 95_"<< output_binary[0] <<"_____________________________________" << output_binary[1]<< std::endl;
+  std::cout << "check-point 94_tensor_size="<< tensor_size << std::endl;
+  std::cout << "check-point 95_"<< output_binary[0] <<"________________" << output_binary[1]<< std::endl;
  // std::cout << "check-point 96_"<< output_pid[0] <<"_____________________________________" << output_pid[1]<< std::endl;
  // std::cout << "check-point 97_"<< output_p4[0] <<"_____________________________________" << output_p4[1]<< std::endl;
     

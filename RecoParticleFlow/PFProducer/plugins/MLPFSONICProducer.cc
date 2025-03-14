@@ -24,9 +24,6 @@ public:
   void produce(edm::Event &iEvent, edm::EventSetup const &iSetup, Output const &iOutput) override;
   static void fillDescriptions(edm::ConfigurationDescriptions & );
 
-  // static methods for handling the global cache
-   // static std::unique_ptr<ONNXRuntime> initializeGlobalCache(const edm::ParameterSet&);
-  //      static void globalEndJob(const ONNXRuntime*);
 
 private:
   const edm::EDPutTokenT<reco::PFCandidateCollection> pfCandidatesPutToken_;
@@ -34,6 +31,8 @@ private:
   const edm::EDGetTokenT<reco::PFBlockCollection> inputTagBlocks_;
   std::vector<std::string> input_names_;
   std::vector<std::string> output_names_;
+  // Declare inputs as a private member variable
+  std::vector<std::vector<float>> inputs;
 };
 
 class SelectedElementsManager {
@@ -103,9 +102,9 @@ void MLPFSONICProducer::acquire(edm::Event const &iEvent, edm::EventSetup const 
   const auto tensor_size = num_elements_total;
 
   //Fill the input tensor (batch, elems, features) = (1, tensor_size, NUM_ELEMENT_FEATURES)
-  std::vector<std::vector<float>> inputs;
-  inputs.push_back(std::vector<float>(tensor_size*NUM_ELEMENT_FEATURES, 0.0));
-  inputs.push_back(std::vector<float>(tensor_size, 0.0));  // mask
+  inputs.resize(2);
+  inputs[0].assign(tensor_size * NUM_ELEMENT_FEATURES, 0.0);
+  inputs[1].assign(tensor_size, 0.0);
 
   unsigned int ielem = 0;
   const auto &mask_name = input_names_[0];
@@ -141,10 +140,6 @@ void MLPFSONICProducer::acquire(edm::Event const &iEvent, edm::EventSetup const 
   data1.toServer(tdata1); 
   data2.toServer(tdata2);
   std::cout << "check-point Producer-143_tensorsize_"<< tensor_size << std::endl;
-  // for (unsigned int i = 0; i < tensor_size; i++) {
-  //   std::cout << "check-point Producer-151_mask_ "<< (*tdata1)[0][i] << std::endl;
-  //   std::cout << "check-point Producer-152_elem_"<< (*tdata2)[0][i] << std::endl; 
-  // } Non-empty
 }
 void MLPFSONICProducer::produce(edm::Event &iEvent,
                                 const edm::EventSetup &iSetup,
@@ -159,22 +154,16 @@ void MLPFSONICProducer::produce(edm::Event &iEvent,
     const auto &output_binary = output1.fromServer<float>();
     const auto &output_pid = output2.fromServer<float>();
     const auto &output_p4 = output3.fromServer<float>();
-    // const auto &output_from_server = output0.fromServer<float>();
-   // std::cout << "check-point Producer-163_(should be x2)"<< output_binary[0].size()<<std::endl;
-   // std::cout << "check-point Producer-164_(should be x9)"<< output_pid[0].size()<<std::endl;
-   // std::cout << "check-point Producer-165_(should x5)"<< output_p4[0].size()<<std::endl;
-    std::cout << "check-point Producer-166_(should be x2)"<< output_binary[0][0] << "______"<< output_binary[0][1] <<"____"<< output_binary[0][2]<< "____"<< output_binary[0][3]<<std::endl;
     const auto &selected_elements = SelectedElementsManager::getInstance().get();
     // Total Number of selected_elements 
     unsigned int num_elements_total = selected_elements.size();
     unsigned int tensor_size = num_elements_total;
-    //std::cout << "check-point Producer-171_"<<tensor_size<<std::endl; 
     
     std::vector<reco::PFCandidate> pOutputCandidateCollection;
     for (size_t ielem = 0; ielem < num_elements_total; ielem++) {
       std::vector<float> pred_id_probas(pdgid_encoding.size(), 0.0);
       const reco::PFBlockElement* elem = selected_elements[ielem];
-      const auto logit_no_ptcl = output_binary[0][ielem * 2 + 0]; //.begin();
+      const auto logit_no_ptcl = output_binary[0][ielem * 2 + 0]; 
       const auto logit_ptcl = output_binary[0][ielem * 2 + 1]; //.begin();
      
       // Check if the binary classifier of the model predicted a particle 
@@ -190,9 +179,9 @@ void MLPFSONICProducer::produce(edm::Event &iEvent,
         pred_pid = pdgid_encoding.at(imax);
       }
       //a particle was predicted for this PFElement, otherwise it was a spectator
-     // if (pred_pid != 0) {
-      if(false){   
+      if (pred_pid !=0){   
      //muons and charged hadrons should only come from tracks, otherwise we won't have track references to pass downstream
+        std::cout << "check-point Producer-186" << std::endl;       
         if (((pred_pid == 13) || (pred_pid == 211)) && elem->type() != reco::PFBlockElement::TRACK) {
           pred_pid = 130;
         }
@@ -219,16 +208,16 @@ void MLPFSONICProducer::produce(edm::Event &iEvent,
           if ((pred_pid == 211) && (eltTrack->isLinkedToDisplacedVertex())) {
               pred_pid = 130;
           }
-        }
-      // std::cout << "check-point Producer-224" << std::endl;
+       }
+       std::cout << "check-point Producer-224" << std::endl;
       //get the predicted momentum components from the model
-       float pred_pt = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_PT].begin();
-       //pred_pt = exp(pred_pt) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 1]; 
-       float pred_eta = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_ETA].begin();
-       float pred_sin_phi = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_SIN_PHI].begin();
-       float pred_cos_phi = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_COS_PHI].begin();
-       float pred_e = *output_p4[ielem * NUM_OUTPUT_FEATURES_P4 + IDX_ENERGY].begin();
-       //pred_e = exp(pred_e) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 5];
+       float pred_pt = output_p4[0][ielem * NUM_OUTPUT_FEATURES_P4 + IDX_PT];
+       pred_pt = exp(pred_pt) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 1]; 
+       float pred_eta = output_p4[0][ielem * NUM_OUTPUT_FEATURES_P4 + IDX_ETA];
+       float pred_sin_phi = output_p4[0][ielem * NUM_OUTPUT_FEATURES_P4 + IDX_SIN_PHI];
+       float pred_cos_phi = output_p4[0][ielem * NUM_OUTPUT_FEATURES_P4 + IDX_COS_PHI];
+       float pred_e = output_p4[0][ielem * NUM_OUTPUT_FEATURES_P4 + IDX_ENERGY];
+       pred_e = exp(pred_e) * inputs[0][ielem * NUM_ELEMENT_FEATURES + 5];
       
        auto cand = makeCandidate(pred_pid, pred_charge, pred_pt, pred_eta, pred_sin_phi, pred_cos_phi, pred_e);
        setCandidateRefs(cand, selected_elements, ielem);
